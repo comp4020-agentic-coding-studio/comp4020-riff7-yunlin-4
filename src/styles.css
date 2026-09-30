@@ -1,161 +1,727 @@
+/* Ink on paper, plus exactly one held-back accent (--now): it only ever
+   marks a slot happening right now, computed from the wall clock. The
+   navy is the ink. */
 :root {
-  --paper: #f6f3ec;
-  --ink: #23211d;
-  --line: #d8d2c4;
-  --seal: #8a3324;
+  --paper: #ffffff;
+  --surface: #f4f6f9;
+  --surface-2: #e9edf2;
+  --ink: #13233f;
+  --ink-soft: #3b4a63;
+  --muted: #5d6879;
+  --line: #dde3eb;
+  --booked: #dfe4ec;
+  --now: #d23b2f;
+  --label-col: 10.5rem;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  padding: 2rem;
-  background: var(--paper);
+  background: var(--surface);
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", Times, serif;
-  line-height: 1.6;
-}
-
-main {
-  max-width: 42rem;
-  margin: 0 auto;
+  font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: #0b5fff;
+  color: var(--ink);
+  text-underline-offset: 3px;
 }
 
-nav[aria-label="site"] {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.9rem;
+/* ---- masthead + nav ---------------------------------------------------- */
+
+.masthead {
+  background: var(--paper);
 }
 
-nav[aria-label="date"] {
+.masthead-inner,
+.sitenav-inner,
+.pagehead-inner,
+.page,
+.sitefoot-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding-inline: 1.25rem;
+}
+
+.masthead-inner {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: baseline;
-  margin-block: 1.25rem;
-  font-size: 0.95rem;
+  gap: 1rem;
+  padding-block: 1rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.brand-mark {
+  width: 2.4rem;
+  height: 2.75rem;
+  flex: none;
+}
+
+.brand-text {
+  display: grid;
+  line-height: 1.1;
+}
+
+.brand-name {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.masthead-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.sitenav {
+  background: var(--ink);
+}
+
+.sitenav-inner {
+  display: flex;
+  gap: 2rem;
+}
+
+.sitenav a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1.05rem;
+  padding-block: 1rem;
+  border-bottom: 3px solid transparent;
+}
+
+.sitenav a:hover {
+  border-bottom-color: rgb(255 255 255 / 0.4);
+}
+
+.sitenav a[aria-current="page"] {
+  font-weight: 700;
+  border-bottom-color: #fff;
+}
+
+.pagehead {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.pagehead-inner {
+  padding-block: 2rem 1.75rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.lede {
+  max-width: 44rem;
+  margin: 0.6rem 0 0;
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+}
+
+.page {
+  padding-block: 1.75rem 3rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.sitefoot {
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sitefoot-inner {
+  padding-block: 1.25rem;
+}
+
+/* ---- cards ------------------------------------------------------------- */
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgb(19 35 63 / 0.04), 0 4px 16px rgb(19 35 63 / 0.04);
+  min-width: 0;
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.card-head h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
 }
 
 .error {
-  border: 1px solid var(--ink);
-  border-width: 2px;
-  color: var(--ink);
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.25rem;
-  font-size: 0.95rem;
-}
-
-.rooms {
-  display: grid;
-  gap: 1rem;
-  margin-block: 1.5rem;
-}
-
-.room {
-  border: 1px solid var(--line);
-  border-radius: 0.25rem;
-  padding: 0.75rem 1rem;
-}
-
-.room h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.05rem;
-}
-
-.room ul {
-  list-style: none;
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.4rem;
+  padding: 0.8rem 1rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-weight: 600;
 }
 
-.room li {
+/* ---- date nav + chips -------------------------------------------------- */
+
+.datenav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.datenav strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  padding-inline: 0.25rem;
+}
+
+.datenav .step {
+  display: inline-grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.datenav .step:hover {
+  background: var(--surface);
+}
+
+.datenav .jump {
+  font-size: 0.9rem;
+}
+
+.today-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+}
+
+.chips {
+  display: flex;
+  overflow-x: auto;
   gap: 0.6rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 0.2rem;
+  padding: 1rem 1.25rem 0.25rem;
 }
 
-.room li.active {
-  background: color-mix(in srgb, var(--seal) 12%, transparent);
-  border-left: 3px solid var(--seal);
+.chip {
+  flex: none;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: pointer;
 }
 
-.room li.active .time::after {
-  content: " — now";
-  color: var(--seal);
-  font-style: italic;
+.chip:hover {
+  background: #dfe4ec;
 }
 
-.room li.empty {
-  color: #6b6558;
-  font-style: italic;
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
 }
 
-.time {
+/* ---- the timeline ------------------------------------------------------ */
+
+.timeline-scroll {
+  overflow-x: auto;
+  padding: 0.75rem 1.25rem 0.5rem;
+}
+
+.timeline {
+  position: relative;
+  min-width: calc(var(--label-col) + var(--cols) * 3.5rem);
+}
+
+.tl-row {
+  display: grid;
+  grid-template-columns: var(--label-col) 1fr;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+}
+
+.tl-label {
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.98rem;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--paper);
+}
+
+.tl-scale {
+  border-bottom: 0;
+}
+
+.tl-scale .tl-label,
+.tl-hour {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.tl-scale .tl-track {
+  height: 2.25rem;
+  background: none;
+}
+
+.tl-hour {
+  position: absolute;
+  top: 50%;
+  transform: translate(-0.1rem, -50%);
   font-variant-numeric: tabular-nums;
-  min-width: 8.5rem;
 }
 
-.who {
+.tl-group-title {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: 6px 6px 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  position: sticky;
+  left: 0;
+}
+
+.tl-group[hidden] {
+  display: none;
+}
+
+.tl-track {
+  position: relative;
+  height: 2.9rem;
+  cursor: pointer;
+  background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
+  background-size: calc(100% / var(--cols)) 100%;
+  border-left: 1px dashed var(--line);
+}
+
+.tl-row.is-live .tl-label {
+  font-weight: 700;
+}
+
+.tl-empty {
+  position: absolute;
+  inset: 0 auto 0 0.75rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.slot,
+.ghost,
+.picked {
+  position: absolute;
+  top: 0.3rem;
+  bottom: 0.3rem;
+  border-radius: 5px;
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.3rem 0 0.55rem;
+  background: var(--booked);
+  color: var(--ink);
+  font-size: 0.82rem;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: default;
+  z-index: 1;
+  transition: box-shadow 0.15s;
+}
+
+.slot:hover,
+.slot:focus-within {
+  overflow: visible;
+  z-index: 4;
+  min-width: max-content;
+  box-shadow: 0 4px 14px rgb(19 35 63 / 0.18);
+}
+
+.slot .time {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.slot .who {
+  overflow: hidden;
+  text-overflow: ellipsis;
   flex: 1;
 }
 
-.room form {
-  margin: 0;
+.slot form {
+  margin: 0 0 0 auto;
 }
 
-.room button {
+.slot button {
   font: inherit;
-  font-size: 0.85rem;
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 0.2rem;
-  padding: 0.15rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+  opacity: 0.55;
 }
 
-.book-form {
+.slot button:hover,
+.slot button:focus-visible {
+  opacity: 1;
+  background: rgb(19 35 63 / 0.1);
+}
+
+/* The one accent meaning: this booking is happening right now. */
+.slot.active {
+  background: var(--now);
+  color: #fff;
+}
+
+.slot.active button:hover,
+.slot.active button:focus-visible {
+  background: rgb(255 255 255 / 0.2);
+}
+
+.ghost,
+.picked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  border: 2px dashed var(--ink-soft);
+  background: rgb(19 35 63 / 0.04);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.picked {
+  border-style: solid;
+  border-color: var(--ink);
+  background: rgb(19 35 63 / 0.08);
+}
+
+.now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--label-col) + (100% - var(--label-col)) * var(--at));
+  width: 2px;
+  margin-left: -1px;
+  background: var(--now);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.now-pill {
+  position: absolute;
+  top: 0.3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--now);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+  padding: 0.5rem 1.25rem 1.1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 1.1rem;
+  height: 0.75rem;
+  border-radius: 3px;
+}
+
+.swatch-booked {
+  background: var(--booked);
+}
+
+.swatch-now {
+  background: var(--now);
+}
+
+.swatch-free {
+  border: 1.5px dashed var(--ink-soft);
+}
+
+/* ---- booking form + summary ------------------------------------------- */
+
+.split {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  align-items: end;
-  border-top: 1px solid var(--line);
-  padding-top: 1.25rem;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
 }
 
-.book-form h2 {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: 1.05rem;
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1.25rem;
 }
 
-.book-form label {
+.field-wide {
+  grid-column: span 1;
+}
+
+.field label {
   display: block;
-  font-size: 0.85rem;
-  margin-bottom: 0.2rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
 }
 
-.book-form input,
-.book-form select {
+.field input,
+.field select {
   width: 100%;
-  padding: 0.4rem 0.5rem;
+  padding: 0.65rem 0.75rem;
   font: inherit;
-  border: 1px solid var(--line);
-  border-radius: 0.2rem;
-  background: white;
+  color: var(--ink);
+  border: 1px solid #c5cdd9;
+  border-radius: 6px;
+  background: var(--paper);
 }
 
-.book-form button {
+.field input:focus,
+.field select:focus,
+.primary:focus-visible,
+.chip:focus-visible {
+  outline: 3px solid rgb(19 35 63 / 0.25);
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+
+.primary {
   grid-column: 1 / -1;
+  justify-self: start;
   font: inherit;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--ink);
-  border-radius: 0.2rem;
+  font-weight: 700;
+  padding: 0.7rem 1.6rem;
+  border: 0;
+  border-radius: 6px;
   background: var(--ink);
-  color: var(--paper);
+  color: #fff;
   cursor: pointer;
+}
+
+.primary:hover {
+  background: #1d3259;
+}
+
+.summary-body {
+  padding: 1.25rem;
+}
+
+.summary-body p {
+  margin: 0 0 0.75rem;
+}
+
+.stat {
+  font-size: 1.05rem;
+  color: var(--ink-soft);
+}
+
+.stat strong {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin-right: 0.2rem;
+}
+
+.meter {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  border-radius: inherit;
+}
+
+.live-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.live-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  font-weight: 600;
+}
+
+.live-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--now);
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+/* ---- README page ------------------------------------------------------- */
+
+.prose {
+  padding: 1.75rem clamp(1.25rem, 4vw, 2.5rem);
+  max-width: 50rem;
+}
+
+.prose h1 {
+  margin-bottom: 1rem;
+}
+
+.prose h2 {
+  margin-top: 2rem;
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+}
+
+.prose pre {
+  overflow-x: auto;
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: 6px;
+}
+
+/* ---- small screens ----------------------------------------------------- */
+
+@media (max-width: 760px) {
+  :root {
+    --label-col: 8.25rem;
+  }
+
+  .masthead-title {
+    display: none;
+  }
+
+  .split,
+  .book-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page,
+  .pagehead-inner,
+  .masthead-inner,
+  .sitenav-inner,
+  .sitefoot-inner {
+    padding-inline: 1rem;
+  }
+
+  .timeline-scroll {
+    padding-inline: 0.75rem;
+  }
 }

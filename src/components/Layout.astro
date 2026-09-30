@@ -1,0 +1,55 @@
+---
+import "../styles.css";
+
+interface Props {
+  title: string;
+  current: "board" | "about";
+  description?: string;
+}
+
+const { title, current, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {description && <meta name="description" content={description} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap"
+    />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <a class="brand" href="/">
+          <svg class="brand-mark" viewBox="0 0 40 46" aria-hidden="true">
+            <path d="M20 2 L37 8 V22 C37 33 29 41 20 44 C11 41 3 33 3 22 V8 Z" fill="none" stroke="currentColor" stroke-width="2.5" />
+            <text x="20" y="29" text-anchor="middle" font-size="17" font-weight="800" fill="currentColor">R</text>
+          </svg>
+          <span class="brand-text">
+            <span class="brand-name">Room Board</span>
+            <span class="brand-sub">ANU Library prototype</span>
+          </span>
+        </a>
+        <span class="masthead-title">Group study rooms</span>
+      </div>
+    </header>
+    <nav aria-label="site" class="sitenav">
+      <div class="sitenav-inner">
+        <a href="/" aria-current={current === "board" ? "page" : undefined}>Room board</a>
+        <a href="/readme/" aria-current={current === "about" ? "page" : undefined}>About</a>
+      </div>
+    </nav>
+    <slot />
+    <footer class="sitefoot">
+      <div class="sitefoot-inner">A prototype. Not affiliated with the real ANU Library booking system.</div>
+    </footer>
+  </body>
+</html>

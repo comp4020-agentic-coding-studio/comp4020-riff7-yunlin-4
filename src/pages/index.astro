@@ -1,7 +1,7 @@
 ---
 import { canberraParts, canberraWallTimeToEpochMs, nextReloadTargetEpochMs, shiftDate } from "../lib/clock";
 import { listBookingsForDate, listRooms } from "../lib/db";
-import "../styles.css";
+import Layout from "../components/Layout.astro";
 
 // All times on this board are Canberra wall-clock text (see src/lib/schema.ts)
 // — "now" has to be read the same way, regardless of what timezone the
@@ -54,136 +54,327 @@ const nextBoundaryTarget = isToday
   : date === shiftDate(today, 1)
     ? canberraWallTimeToEpochMs(date, "00:00")
     : null;
+
+// --- The timeline grid ---------------------------------------------------
+// Rooms are rows against one shared hour axis, like a real room-booking
+// calendar, so the free gaps read at a glance instead of having to be
+// inferred from a list of times. The axis covers 08:00–20:00 by default and
+// stretches to fit any booking outside that.
+const toMin = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+let startHour = 8;
+let endHour = 20;
+for (const b of bookingsForDate) {
+  startHour = Math.min(startHour, Math.floor(toMin(b.startTime) / 60));
+  endHour = Math.max(endHour, Math.ceil(toMin(b.endTime) / 60));
+}
+const axisStart = startHour * 60;
+const axisSpan = (endHour - startHour) * 60;
+const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
+const pct = (hhmm: string) => ((toMin(hhmm) - axisStart) / axisSpan) * 100;
+const nowMin = toMin(nowTime);
+const nowFraction = isToday && nowMin >= axisStart && nowMin <= axisStart + axisSpan ? (nowMin - axisStart) / axisSpan : null;
+
+// "Hancock — Group Room 1" → library "Hancock", row label "Group Room 1".
+type Row = (typeof roomsWithBookings)[number] & { label: string };
+const libraries: { name: string; rows: Row[] }[] = [];
+for (const entry of roomsWithBookings) {
+  const [library, label] = entry.room.name.includes(" — ") ? entry.room.name.split(" — ") : ["Other", entry.room.name];
+  let group = libraries.find((l) => l.name === library);
+  if (!group) libraries.push((group = { name: library, rows: [] }));
+  group.rows.push({ ...entry, label });
+}
+
+const inUseNow = roomsWithBookings.flatMap(({ room, bookings }) =>
+  bookings.filter((b) => b.active).map((booking) => ({ room, booking })),
+);
+const freeNow = rooms.length - new Set(inUseNow.map((x) => x.room.id)).size;
+const meterFraction = isToday ? freeNow / Math.max(1, rooms.length) : Math.min(1, bookingsForDate.length / Math.max(1, rooms.length * 4));
+
+const fmtDate = (d: string, opts: Intl.DateTimeFormatOptions) =>
+  new Date(`${d}T00:00:00Z`).toLocaleDateString("en-AU", { timeZone: "UTC", ...opts });
+const prevDate = shiftDate(date, -1);
+const nextDate = shiftDate(date, 1);
 ---
 
-<!doctype html>
-<html lang="en-AU">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta
-      name="description"
-      content="A live board for ANU Library group study rooms — book a slot, see who's got a room right now, cancel one you don't need."
-    />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Room board</title>
-  </head>
-  <body>
-    <nav aria-label="site">
-      <a href="/">Room board</a>
-      <a href="/readme/">About</a>
-    </nav>
-    <main>
+<Layout
+  title="Room board"
+  current="board"
+  description="A live board for ANU Library group study rooms — book a slot, see who's got a room right now, cancel one you don't need."
+>
+  <main>
+  <div class="pagehead">
+    <div class="pagehead-inner">
+      <p class="eyebrow">ANU Library · Group study rooms</p>
       <h1>Room board</h1>
-      <p>
-        A shared, live view of a handful of ANU Library group study rooms: who's booked what, and what's free — see
-        the <a href="/readme/">README</a> for what this prototype is standing in for.
+      <p class="lede">
+        A shared, live view of a handful of group study rooms: who's booked what, and what's free. Click an empty
+        stretch of the timeline to start a booking — see the <a href="/readme/">README</a> for what this prototype is
+        standing in for.
       </p>
+    </div>
+  </div>
 
-      <nav aria-label="date">
-        <a href={`/?date=${shiftDate(date, -1)}`}>&larr; {shiftDate(date, -1)}</a>
-        <strong>{date}{isToday ? " (today)" : ""}</strong>
-        <a href={`/?date=${shiftDate(date, 1)}`}>{shiftDate(date, 1)} &rarr;</a>
-      </nav>
+  <div class="page">
+    {error && (
+      <p class="error" role="alert">
+        {errorMessages[error] ?? "Something went wrong — try again."}
+      </p>
+    )}
 
-      {error && (
-        <p class="error" role="alert">
-          {errorMessages[error] ?? "Something went wrong — try again."}
-        </p>
-      )}
+    <section class="card" aria-labelledby="rooms-heading">
+      <div class="card-head">
+        <h2 id="rooms-heading">Available rooms</h2>
+        <nav aria-label="date" class="datenav">
+          <a class="step" href={`/?date=${prevDate}`} aria-label={`Previous day, ${prevDate}`}>&lsaquo;</a>
+          <strong>
+            {fmtDate(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            {isToday && <span class="today-tag">Today</span>}
+          </strong>
+          <a class="step" href={`/?date=${nextDate}`} aria-label={`Next day, ${nextDate}`}>&rsaquo;</a>
+          {!isToday && <a class="jump" href="/">Back to today</a>}
+        </nav>
+      </div>
 
-      <div class="rooms">
-        {roomsWithBookings.map(({ room, bookings }) => (
-          <section class="room" aria-labelledby={`room-${room.id}`}>
-            <h2 id={`room-${room.id}`}>{room.name}</h2>
-            <ul>
-              {bookings.length === 0 && <li class="empty">Free all day</li>}
-              {bookings.map((booking) => (
-                <li class={booking.active ? "active" : undefined}>
-                  <span class="time">
-                    {booking.startTime}–{booking.endTime}
-                  </span>
-                  <span class="who">{booking.bookedBy}</span>
-                  <form method="post" action={`/api/bookings/${booking.id}/cancel`}>
-                    <input type="hidden" name="date" value={date} />
-                    <button type="submit">Cancel</button>
-                  </form>
-                </li>
-              ))}
-            </ul>
-          </section>
+      <div class="chips" role="group" aria-label="Filter by library">
+        <button type="button" class="chip" aria-pressed="true" data-library="">All libraries</button>
+        {libraries.map((l) => (
+          <button type="button" class="chip" aria-pressed="false" data-library={l.name}>{l.name} Library</button>
         ))}
       </div>
 
-      <form method="post" action="/api/bookings" class="book-form">
-        <h2>Book a room</h2>
-        <input type="hidden" name="date" value={date} />
-        <div>
-          <label for="roomId">Room</label>
-          <select id="roomId" name="roomId" required>
-            {rooms.map((room) => (
-              <option value={room.id}>{room.name}</option>
-            ))}
-          </select>
+      <div class="timeline-scroll">
+        <div class="timeline" style={`--cols: ${hours.length}`} data-axis-start={axisStart} data-axis-span={axisSpan}>
+          <div class="tl-row tl-scale" aria-hidden="true">
+            <span class="tl-label">Room</span>
+            <div class="tl-track">
+              {hours.map((h, i) => (
+                <span class="tl-hour" style={`left: ${(i / hours.length) * 100}%`}>{String(h).padStart(2, "0")}:00</span>
+              ))}
+            </div>
+          </div>
+
+          {libraries.map((library) => (
+            <div class="tl-group" data-library={library.name}>
+              <h3 class="tl-group-title">{library.name} Library</h3>
+              {library.rows.map(({ label, room, bookings }) => (
+                <div class={`tl-row${bookings.some((b) => b.active) ? " is-live" : ""}`}>
+                  <span class="tl-label">{label}</span>
+                  <div class="tl-track" data-room-id={room.id}>
+                    {bookings.length === 0 && <span class="tl-empty">Free all day</span>}
+                    {bookings.map((booking) => (
+                      <div
+                        class={`slot${booking.active ? " active" : ""}`}
+                        style={`left: ${pct(booking.startTime)}%; width: ${pct(booking.endTime) - pct(booking.startTime)}%`}
+                      >
+                        <span class="time">
+                          {booking.startTime}–{booking.endTime}
+                        </span>
+                        <span class="who">{booking.bookedBy}</span>
+                        <form method="post" action={`/api/bookings/${booking.id}/cancel`}>
+                          <input type="hidden" name="date" value={date} />
+                          <button type="submit" aria-label={`Cancel booking for ${booking.bookedBy}`}>&times;</button>
+                        </form>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {nowFraction !== null && (
+            <div class="now-line" style={`--at: ${nowFraction}`} aria-hidden="true">
+              <span class="now-pill">{nowTime}</span>
+            </div>
+          )}
         </div>
-        <div>
-          <label for="bookedBy">Your name</label>
-          <input id="bookedBy" name="bookedBy" required maxlength="80" />
+      </div>
+
+      <p class="legend">
+        <span><i class="swatch swatch-booked"></i>Booked</span>
+        <span><i class="swatch swatch-now"></i>Happening now</span>
+        <span><i class="swatch swatch-free"></i>Free — click to book</span>
+      </p>
+    </section>
+
+    <div class="split">
+      <form method="post" action="/api/bookings" class="card book-form" id="book">
+        <div class="card-head">
+          <h2>Book a room</h2>
         </div>
-        <div>
-          <label for="startTime">From</label>
-          <input id="startTime" name="startTime" type="time" required />
+        <div class="book-grid">
+          <input type="hidden" name="date" value={date} />
+          <div class="field field-wide">
+            <label for="roomId">Room</label>
+            <select id="roomId" name="roomId" required>
+              {rooms.map((room) => (
+                <option value={room.id}>{room.name}</option>
+              ))}
+            </select>
+          </div>
+          <div class="field field-wide">
+            <label for="bookedBy">Your name</label>
+            <input id="bookedBy" name="bookedBy" required maxlength="80" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="startTime">From</label>
+            <input id="startTime" name="startTime" type="time" required />
+          </div>
+          <div class="field">
+            <label for="endTime">To</label>
+            <input id="endTime" name="endTime" type="time" required />
+          </div>
+          <button class="primary">Book {fmtDate(date, { weekday: "short", day: "numeric", month: "short" })}</button>
         </div>
-        <div>
-          <label for="endTime">To</label>
-          <input id="endTime" name="endTime" type="time" required />
-        </div>
-        <button>Book {date}</button>
       </form>
-    </main>
-    <script is:inline define:vars={{ date, nextBoundaryTarget }}>
-      // The board's live half: any tab looking at this same date reloads the
-      // moment a booking is made or cancelled anywhere, so two people looking
-      // at the same day never work from stale information. The form itself
-      // needs none of this — its own POST + redirect already re-renders from
-      // SQLite.
-      const source = new EventSource("/api/events");
-      source.addEventListener("booking", (event) => {
-        const payload = JSON.parse(event.data);
-        if (payload.date === date) location.reload();
-      });
 
-      // The SSE stream carries no state of its own, just a "something
-      // changed" signal — so a connection that drops (a network blip, a
-      // server restart on deploy) and reconnects has no way to know what it
-      // missed while it was down. "open" fires on every reconnect as well as
-      // the first connect; reload on every one after the first, since by
-      // then the only safe assumption is that something might have changed.
-      let hasOpenedBefore = false;
-      source.addEventListener("open", () => {
-        if (hasOpenedBefore) location.reload();
-        hasOpenedBefore = true;
-      });
+      <aside class="card summary" aria-labelledby="summary-heading">
+        <div class="card-head">
+          <h2 id="summary-heading">{isToday ? "Right now" : "This day"}</h2>
+        </div>
+        <div class="summary-body">
+          {isToday ? (
+            <p class="stat"><strong>{freeNow}</strong> of {rooms.length} rooms free</p>
+          ) : (
+            <p class="stat"><strong>{bookingsForDate.length}</strong> {bookingsForDate.length === 1 ? "booking" : "bookings"}</p>
+          )}
+          <div class="meter" aria-hidden="true"><span style={`width: ${meterFraction * 100}%`}></span></div>
+          {isToday && inUseNow.length > 0 && (
+            <ul class="live-list">
+              {inUseNow.map(({ room, booking }) => (
+                <li>
+                  <span class="live-dot" aria-hidden="true"></span>
+                  <span>{room.name}</span>
+                  <span class="muted">until {booking.endTime}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {isToday && inUseNow.length === 0 && <p class="muted">No room is in use at {nowTime}.</p>}
+          <p class="muted small">Updates live when anyone books or cancels.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+  </main>
 
-      // The other half of "live": the "happening now" highlight and the
-      // date-nav's "(today)" label are both computed once, at render time.
-      // With no other tab ever booking or cancelling anything today, this
-      // tab would otherwise keep showing that render's answer forever —
-      // past the end of a highlighted slot, past midnight into a day this
-      // render was never "today" for, or (on a tab left parked on tomorrow's
-      // view) past midnight into the moment that date becomes today and
-      // ought to switch its label and highlighting on. `nextBoundaryTarget`
-      // (the real UTC instant of the next booking start/end today, of
-      // midnight if nothing's left to wait for today, or of midnight if
-      // this view is tomorrow's date) is computed server-side, correctly
-      // across a Canberra daylight-saving transition — see
-      // canberraWallTimeToEpochMs in src/lib/clock.ts. The client just
-      // takes the delay from its own clock at load time, rather than
-      // trusting a minute count computed at render time to still equal the
-      // same number of real milliseconds by the time it fires.
-      if (nextBoundaryTarget !== null) {
-        setTimeout(() => location.reload(), Math.max(0, nextBoundaryTarget - Date.now()) + 5_000);
+  <script is:inline define:vars={{ date, nextBoundaryTarget }}>
+    // The board's live half: any tab looking at this same date reloads the
+    // moment a booking is made or cancelled anywhere, so two people looking
+    // at the same day never work from stale information. The form itself
+    // needs none of this — its own POST + redirect already re-renders from
+    // SQLite.
+    const source = new EventSource("/api/events");
+    source.addEventListener("booking", (event) => {
+      const payload = JSON.parse(event.data);
+      if (payload.date === date) location.reload();
+    });
+
+    // The SSE stream carries no state of its own, just a "something
+    // changed" signal — so a connection that drops (a network blip, a
+    // server restart on deploy) and reconnects has no way to know what it
+    // missed while it was down. "open" fires on every reconnect as well as
+    // the first connect; reload on every one after the first, since by
+    // then the only safe assumption is that something might have changed.
+    let hasOpenedBefore = false;
+    source.addEventListener("open", () => {
+      if (hasOpenedBefore) location.reload();
+      hasOpenedBefore = true;
+    });
+
+    // The "happening now" highlight and the "Today" label are computed once,
+    // at render time; reload at the next booking boundary (or midnight) so
+    // they never go stale. `nextBoundaryTarget` is a real UTC instant,
+    // computed DST-safely server-side — see canberraWallTimeToEpochMs in
+    // src/lib/clock.ts.
+    if (nextBoundaryTarget !== null) {
+      setTimeout(() => location.reload(), Math.max(0, nextBoundaryTarget - Date.now()) + 5_000);
+    }
+  </script>
+
+  <script is:inline>
+    // The calendar half: hover an empty stretch of a room's row to preview a
+    // one-hour slot, click it and the booking form fills itself in. The form
+    // stays the source of truth; this only saves typing.
+    (() => {
+      const timeline = document.querySelector(".timeline");
+      if (!timeline) return;
+      const axisStart = Number(timeline.dataset.axisStart);
+      const axisSpan = Number(timeline.dataset.axisSpan);
+      const pad = (n) => String(n).padStart(2, "0");
+      const hhmm = (m) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+      const slotAt = (track, clientX) => {
+        const rect = track.getBoundingClientRect();
+        const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+        const start = Math.min(axisStart + Math.floor((frac * axisSpan) / 30) * 30, axisStart + axisSpan - 60);
+        return { start, end: start + 60 };
+      };
+      const place = (el, { start, end }) => {
+        el.style.left = `${((start - axisStart) / axisSpan) * 100}%`;
+        el.style.width = `${((end - start) / axisSpan) * 100}%`;
+        el.textContent = `${hhmm(start)} – ${hhmm(end)}`;
+      };
+      for (const track of timeline.querySelectorAll(".tl-track[data-room-id]")) {
+        track.addEventListener("mousemove", (e) => {
+          let ghost = track.querySelector(".ghost");
+          if (e.target.closest(".slot")) return ghost?.remove();
+          if (!ghost) {
+            ghost = document.createElement("div");
+            ghost.className = "ghost";
+            track.appendChild(ghost);
+          }
+          place(ghost, slotAt(track, e.clientX));
+        });
+        track.addEventListener("mouseleave", () => track.querySelector(".ghost")?.remove());
+        track.addEventListener("click", (e) => {
+          if (e.target.closest(".slot")) return;
+          const slot = slotAt(track, e.clientX);
+          timeline.querySelectorAll(".picked").forEach((p) => p.remove());
+          const picked = document.createElement("div");
+          picked.className = "picked";
+          place(picked, slot);
+          track.appendChild(picked);
+          document.getElementById("roomId").value = track.dataset.roomId;
+          document.getElementById("startTime").value = hhmm(slot.start);
+          document.getElementById("endTime").value = hhmm(slot.end);
+          document.getElementById("book").scrollIntoView({ behavior: "smooth", block: "center" });
+          document.getElementById("bookedBy").focus({ preventScroll: true });
+        });
       }
-    </script>
-  </body>
-</html>
+
+      // Library filter chips.
+      const chips = document.querySelectorAll(".chip");
+      for (const chip of chips) {
+        chip.addEventListener("click", () => {
+          chips.forEach((c) => c.setAttribute("aria-pressed", String(c === chip)));
+          for (const group of timeline.querySelectorAll(".tl-group")) {
+            group.hidden = chip.dataset.library !== "" && group.dataset.library !== chip.dataset.library;
+          }
+        });
+      }
+
+      // Keep the now-line creeping forward between the page's boundary
+      // reloads, read from the same Canberra wall clock the server uses.
+      const line = timeline.querySelector(".now-line");
+      if (line) {
+        const fmt = new Intl.DateTimeFormat("en-AU", {
+          timeZone: "Australia/Canberra",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        setInterval(() => {
+          const [h, m] = fmt.format(new Date()).split(":").map(Number);
+          const mins = (h % 24) * 60 + m;
+          const frac = (mins - axisStart) / axisSpan;
+          if (frac < 0 || frac > 1) return;
+          line.style.setProperty("--at", String(frac));
+          line.querySelector(".now-pill").textContent = hhmm(mins);
+        }, 20_000);
+      }
+    })();
+  </script>
+</Layout>
