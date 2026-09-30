@@ -133,5 +133,7 @@ jobs:
           fi
       - name: Check internal links on the live site
         # Internal links only; the skip is anchored to this app's own origin
-        # so outbound links can't redden a deploy.
-        run: pnpm dlx linkinator "$APP_URL" --recurse --silent --skip "^(?!$APP_URL)"
+        # so outbound links can't redden a deploy. The board's prev/next-day
+        # links (?date=) chain forever, so the crawl skips them too, or it
+        # never finishes and the job times out.
+        run: pnpm dlx linkinator "$APP_URL" --recurse --silent --skip "^(?!$APP_URL)|[?&]date="
