@@ -24,6 +24,10 @@ export const bookings = sqliteTable("bookings", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   bookedBy: text("booked_by").notNull(),
+  // Canberra wall-clock HH:MM the booker tapped "I'm here" on the door sign;
+  // null until then. A booking still null CHECK_IN_GRACE_MIN after its start
+  // is a no-show, and the room reads as free.
+  checkedInAt: text("checked_in_at"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),

@@ -7,6 +7,18 @@ booking system](https://anulib.anu.edu.au/news-events/news/new-and-improved-grou
 which lives behind a separate login on its own site and only ever shows you
 what's booked, not what's actually happening in a room right now.
 
+## Riff: the door sign
+
+The board still only knew what was *booked*, so this riff builds the screen
+that would hang outside each room (`/room/1/`, `/room/2/`, `/room/3/`). You
+can read it from down the corridor: green **Free**, red **In use**, or amber
+**Check in**, with a countdown ring beside it. When a booking starts, the sign
+asks whoever booked it to check in. If nobody has checked in 10 minutes later,
+the booking counts as a no-show, the room goes back to free, and anyone
+standing at the door can take it with one tap. That walk-up booking starts
+already checked in. If you leave early, one tap frees the rest of your time.
+The board's header shows the same three states as live tiles, one per room.
+
 ## What good looks like here
 
 The one annoyance this prototype is built to fix: standing outside a room

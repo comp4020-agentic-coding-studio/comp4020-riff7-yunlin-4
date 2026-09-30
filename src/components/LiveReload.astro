@@ -1,0 +1,37 @@
+---
+interface Props {
+  date: string;
+  nextBoundaryTarget: number | null;
+}
+const { date, nextBoundaryTarget } = Astro.props;
+---
+
+<script is:inline define:vars={{ date, nextBoundaryTarget }}>
+  // Any tab looking at this date reloads the moment a booking is made,
+  // cancelled, checked in to or ended anywhere, so nobody works from a stale
+  // board. The forms themselves need none of this — their POST + redirect
+  // already re-renders from SQLite.
+  const source = new EventSource("/api/events");
+  source.addEventListener("booking", (event) => {
+    const payload = JSON.parse(event.data);
+    if (payload.date === date) location.reload();
+  });
+
+  // The stream carries no state, just "something changed", so a connection
+  // that drops and reconnects can't know what it missed. "open" fires on
+  // every reconnect as well as the first connect; reload on every one after
+  // the first.
+  let hasOpenedBefore = false;
+  source.addEventListener("open", () => {
+    if (hasOpenedBefore) location.reload();
+    hasOpenedBefore = true;
+  });
+
+  // Every state on the page is computed once at render time; reload at the
+  // next boundary (a booking starting or ending, a check-in window closing,
+  // or midnight) so none of it goes stale. `nextBoundaryTarget` is a real
+  // UTC instant computed DST-safely server-side (src/lib/clock.ts).
+  if (nextBoundaryTarget !== null) {
+    setTimeout(() => location.reload(), Math.max(0, nextBoundaryTarget - Date.now()) + 5_000);
+  }
+</script>

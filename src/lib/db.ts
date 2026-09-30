@@ -1,10 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { type Booking, type Room, bookings, rooms } from "./schema";
+import { slotState } from "./status";
 
 // One SQLite file is the app's whole persistent state. In production
 // fly.toml points DATABASE_PATH at the machine's volume (/data), which is
@@ -57,6 +58,7 @@ interface NewBooking {
   startTime: string;
   endTime: string;
   bookedBy: string;
+  checkedInAt?: string | null;
 }
 
 // Runs the whole check-then-insert as one call: better-sqlite3's calls are
@@ -82,4 +84,42 @@ export function addBooking(candidate: NewBooking): Booking {
 export function cancelBooking(id: number): string | null {
   const removed = db.delete(bookings).where(eq(bookings.id, id)).returning().all();
   return removed[0]?.date ?? null;
+}
+
+export function getBooking(id: number): Booking | undefined {
+  return db.select().from(bookings).where(eq(bookings.id, id)).get();
+}
+
+/** Only a booking that is still waiting for check-in (today, inside its grace window) can be checked in to. */
+export function checkIn(id: number, today: string, now: string): Booking | null {
+  const b = getBooking(id);
+  if (!b || b.date !== today || slotState(b, "today", now) !== "awaiting") return null;
+  return db.update(bookings).set({ checkedInAt: now }).where(eq(bookings.id, id)).returning().get() ?? null;
+}
+
+/** Leaving early truncates the booking to now, so the rest of its time is free and the history stays. */
+export function endBookingNow(id: number, today: string, now: string): Booking | null {
+  const b = getBooking(id);
+  if (!b || b.date !== today || slotState(b, "today", now) !== "live") return null;
+  if (now <= b.startTime) {
+    cancelBooking(id);
+    return b;
+  }
+  return db.update(bookings).set({ endTime: now }).where(eq(bookings.id, id)).returning().get() ?? null;
+}
+
+// A no-show still occupies its slot in the table, so the overlap check would
+// refuse anyone trying to take the room it has already given up. Truncating
+// it to `now` first makes the rest of its time bookable.
+export function releaseNoShows(roomId: number, today: string, now: string): void {
+  const inRoom = db
+    .select()
+    .from(bookings)
+    .where(and(eq(bookings.roomId, roomId), eq(bookings.date, today), isNull(bookings.checkedInAt)))
+    .all();
+  for (const b of inRoom) {
+    if (slotState(b, "today", now) === "noshow" && b.startTime < now && now < b.endTime) {
+      db.update(bookings).set({ endTime: now }).where(eq(bookings.id, b.id)).run();
+    }
+  }
 }

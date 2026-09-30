@@ -1,6 +1,8 @@
 import type { APIRoute } from "astro";
-import { ConflictError, ValidationError, addBooking, listRooms } from "../../lib/db";
+import { canberraParts } from "../../lib/clock";
+import { ConflictError, ValidationError, addBooking, listRooms, releaseNoShows } from "../../lib/db";
 import { bus } from "../../lib/events";
+import { doorSignPath } from "../../lib/status";
 
 // The board's own display and overlap logic both string-compare date/time
 // values assuming YYYY-MM-DD / HH:MM shape (see src/lib/schema.ts and
@@ -26,17 +28,26 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const endTime = String(form.get("endTime") ?? "");
   const bookedBy = String(form.get("bookedBy") ?? "").trim().slice(0, 80);
   const roomId = Number(form.get("roomId"));
+  const returnTo = doorSignPath(form.get("return"));
 
   const back = (error?: string) =>
-    redirect(`/?${new URLSearchParams({ date, ...(error ? { error } : {}) })}`, 303);
+    returnTo
+      ? redirect(error ? `${returnTo}?${new URLSearchParams({ error })}` : returnTo, 303)
+      : redirect(`/?${new URLSearchParams({ date, ...(error ? { error } : {}) })}`, 303);
 
   if (!Number.isInteger(roomId) || !listRooms().some((room) => room.id === roomId)) return back("room");
   if (!bookedBy) return back("name");
   if (!DATE_RE.test(date)) return back("date");
   if (!TIME_RE.test(startTime) || !TIME_RE.test(endTime)) return back("invalid");
 
+  // Someone booking from the door sign is standing at the room, so their
+  // booking starts checked in — but only if it really covers this minute.
+  const { date: today, time: now } = canberraParts(new Date());
+  const checkedInAt = form.get("checkIn") && date === today && startTime <= now && now < endTime ? now : null;
+
   try {
-    const booking = addBooking({ roomId, date, startTime, endTime, bookedBy });
+    if (date === today) releaseNoShows(roomId, today, now);
+    const booking = addBooking({ roomId, date, startTime, endTime, bookedBy, checkedInAt });
     bus.emit("booking", { date: booking.date });
   } catch (err) {
     if (err instanceof ValidationError) return back("invalid");

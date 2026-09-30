@@ -1,7 +1,18 @@
 ---
 import { canberraParts, canberraWallTimeToEpochMs, nextReloadTargetEpochMs, shiftDate } from "../lib/clock";
 import { listBookingsForDate, listRooms } from "../lib/db";
+import {
+  CHECK_IN_GRACE_MIN,
+  type Day,
+  reloadBoundaries,
+  remainingFraction,
+  roomStatus,
+  slotState,
+  splitRoomName,
+} from "../lib/status";
 import Layout from "../components/Layout.astro";
+import LiveReload from "../components/LiveReload.astro";
+import Ticker from "../components/Ticker.astro";
 
 // All times on this board are Canberra wall-clock text (see src/lib/schema.ts)
 // — "now" has to be read the same way, regardless of what timezone the
@@ -22,17 +33,19 @@ const errorMessages: Record<string, string> = {
 
 const rooms = listRooms();
 const bookingsForDate = listBookingsForDate(date);
-// Whether "now" falls inside a booking is decided here, in plain TS, and
-// carried on the data — the Astro compiler reads a bare `<` inside a JSX-like
-// expression as the start of a tag, so that comparison can't live inline in
-// the template below.
-const isNowWithin = (start: string, end: string) => isToday && start <= nowTime && nowTime < end;
-const roomsWithBookings = rooms.map((room) => ({
-  room,
-  bookings: bookingsForDate
-    .filter((b) => b.roomId === room.id)
-    .map((b) => ({ ...b, active: isNowWithin(b.startTime, b.endTime) })),
-}));
+// Each booking's state (upcoming / awaiting check-in / live / no-show / past)
+// is decided here in plain TS and carried on the data — the Astro compiler
+// reads a bare `<` inside a template expression as the start of a tag.
+const day: Day = date < today ? "past" : isToday ? "today" : "future";
+const stateLabel = { past: "", upcoming: "", live: "In use", awaiting: "Check-in due", noshow: "No-show" };
+const roomsWithBookings = rooms.map((room) => {
+  const own = bookingsForDate.filter((b) => b.roomId === room.id);
+  return {
+    room,
+    status: isToday ? roomStatus(own, nowTime) : null,
+    bookings: own.map((b) => ({ ...b, state: slotState(b, day, nowTime) })),
+  };
+});
 
 // Passed to the client script below so a tab left open across a booking's
 // start/end minute — or across midnight, with no bookings left to wait for
@@ -50,7 +63,7 @@ const roomsWithBookings = rooms.map((room) => ({
 // canberraWallTimeToEpochMs in src/lib/clock.ts) — the client instead
 // computes its own delay as target-minus-now at load time.
 const nextBoundaryTarget = isToday
-  ? nextReloadTargetEpochMs(date, nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
+  ? nextReloadTargetEpochMs(date, nowTime, reloadBoundaries(bookingsForDate))
   : date === shiftDate(today, 1)
     ? canberraWallTimeToEpochMs(date, "00:00")
     : null;
@@ -81,17 +94,30 @@ const nowFraction = isToday && nowMin >= axisStart && nowMin <= axisStart + axis
 type Row = (typeof roomsWithBookings)[number] & { label: string };
 const libraries: { name: string; rows: Row[] }[] = [];
 for (const entry of roomsWithBookings) {
-  const [library, label] = entry.room.name.includes(" — ") ? entry.room.name.split(" — ") : ["Other", entry.room.name];
+  const [library, label] = splitRoomName(entry.room.name);
   let group = libraries.find((l) => l.name === library);
   if (!group) libraries.push((group = { name: library, rows: [] }));
   group.rows.push({ ...entry, label });
 }
 
-const inUseNow = roomsWithBookings.flatMap(({ room, bookings }) =>
-  bookings.filter((b) => b.active).map((booking) => ({ room, booking })),
-);
-const freeNow = rooms.length - new Set(inUseNow.map((x) => x.room.id)).size;
-const meterFraction = isToday ? freeNow / Math.max(1, rooms.length) : Math.min(1, bookingsForDate.length / Math.max(1, rooms.length * 4));
+// The door tiles: one per room, the same state its door sign shows.
+const doors = roomsWithBookings.flatMap(({ room, status }) => {
+  if (!status) return [];
+  const [library, label] = splitRoomName(room.name);
+  const until = status.until ? canberraWallTimeToEpochMs(date, status.until) : null;
+  const detail =
+    status.kind === "busy"
+      ? `${status.booking?.bookedBy} · until ${status.until}`
+      : status.kind === "awaiting"
+        ? `${status.booking?.bookedBy} hasn't checked in`
+        : status.released
+          ? `${status.released.bookedBy} was a no-show`
+          : status.next
+            ? `until ${status.next.startTime}`
+            : "for the rest of today";
+  return [{ room, library, label, status, until, detail, frac: remainingFraction(status, nowTime) }];
+});
+const freeNow = doors.filter((d) => d.status.kind === "free").length;
 
 const fmtDate = (d: string, opts: Intl.DateTimeFormatOptions) =>
   new Date(`${d}T00:00:00Z`).toLocaleDateString("en-AU", { timeZone: "UTC", ...opts });
@@ -107,13 +133,63 @@ const nextDate = shiftDate(date, 1);
   <main>
   <div class="pagehead">
     <div class="pagehead-inner">
-      <p class="eyebrow">ANU Library · Group study rooms</p>
-      <h1>Room board</h1>
-      <p class="lede">
-        A shared, live view of a handful of group study rooms: who's booked what, and what's free. Click an empty
-        stretch of the timeline to start a booking — see the <a href="/readme/">README</a> for what this prototype is
-        standing in for.
-      </p>
+      <div class="pagehead-top">
+        <div>
+          <p class="eyebrow">ANU Library · Group study rooms</p>
+          <h1>Room board</h1>
+        </div>
+        {isToday ? (
+          <p class="headline-stat">
+            <strong>{freeNow}</strong>
+            <span>of {rooms.length} rooms<br />free right now</span>
+          </p>
+        ) : (
+          <p class="headline-stat">
+            <strong>{bookingsForDate.length}</strong>
+            <span>{bookingsForDate.length === 1 ? "booking" : "bookings"}<br />on this day</span>
+          </p>
+        )}
+      </div>
+
+      {isToday && (
+        <ul class="doors" aria-label="Rooms right now">
+          {doors.map((d) => (
+            <li>
+              <a
+                class={`door door-${d.status.kind}`}
+                href={`/room/${d.room.id}/`}
+                data-until={d.until ?? undefined}
+                data-seg-ms={d.status.segMin * 60_000}
+                style={`--frac: ${d.frac}`}
+              >
+                <span class="door-lib">{d.library}</span>
+                <span class="door-room">{d.label}</span>
+                <span class="door-word">{{ free: "Free", busy: "In use", awaiting: "Check-in due" }[d.status.kind]}</span>
+                <span class="door-detail">
+                  {d.detail}
+                  {d.until && d.status.kind === "busy" && (
+                    <span class="door-left">
+                      {" "}· <span data-left></span> left
+                    </span>
+                  )}
+                  {d.until && d.status.kind === "awaiting" && (
+                    <span class="door-left">
+                      {" "}· <span data-left></span> to check in
+                    </span>
+                  )}
+                  {d.until && d.status.kind === "free" && d.status.released && (
+                    <span class="door-left">
+                      {" "}· free for <span data-left></span>
+                    </span>
+                  )}
+                </span>
+                <span class="door-bar" aria-hidden="true"><span></span></span>
+                <span class="door-open">Open door sign &rarr;</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   </div>
 
@@ -159,20 +235,24 @@ const nextDate = shiftDate(date, 1);
           {libraries.map((library) => (
             <div class="tl-group" data-library={library.name}>
               <h3 class="tl-group-title">{library.name} Library</h3>
-              {library.rows.map(({ label, room, bookings }) => (
-                <div class={`tl-row${bookings.some((b) => b.active) ? " is-live" : ""}`}>
-                  <span class="tl-label">{label}</span>
+              {library.rows.map(({ label, room, bookings, status }) => (
+                <div class={`tl-row${status && status.kind !== "free" ? " is-live" : ""}`}>
+                  <span class="tl-label">
+                    {status && <i class={`dot dot-${status.kind}`} aria-hidden="true"></i>}
+                    <a href={`/room/${room.id}/`}>{label}</a>
+                  </span>
                   <div class="tl-track" data-room-id={room.id}>
                     {bookings.length === 0 && <span class="tl-empty">Free all day</span>}
                     {bookings.map((booking) => (
                       <div
-                        class={`slot${booking.active ? " active" : ""}`}
+                        class={`slot is-${booking.state}`}
                         style={`left: ${pct(booking.startTime)}%; width: ${pct(booking.endTime) - pct(booking.startTime)}%`}
                       >
                         <span class="time">
                           {booking.startTime}–{booking.endTime}
                         </span>
                         <span class="who">{booking.bookedBy}</span>
+                        {stateLabel[booking.state] && <span class="tag">{stateLabel[booking.state]}</span>}
                         <form method="post" action={`/api/bookings/${booking.id}/cancel`}>
                           <input type="hidden" name="date" value={date} />
                           <button type="submit" aria-label={`Cancel booking for ${booking.bookedBy}`}>&times;</button>
@@ -195,7 +275,9 @@ const nextDate = shiftDate(date, 1);
 
       <p class="legend">
         <span><i class="swatch swatch-booked"></i>Booked</span>
-        <span><i class="swatch swatch-now"></i>Happening now</span>
+        <span><i class="swatch swatch-now"></i>In use (checked in)</span>
+        <span><i class="swatch swatch-wait"></i>Check-in due</span>
+        <span><i class="swatch swatch-noshow"></i>No-show, released</span>
         <span><i class="swatch swatch-free"></i>Free — click to book</span>
       </p>
     </section>
@@ -233,67 +315,33 @@ const nextDate = shiftDate(date, 1);
 
       <aside class="card summary" aria-labelledby="summary-heading">
         <div class="card-head">
-          <h2 id="summary-heading">{isToday ? "Right now" : "This day"}</h2>
+          <h2 id="summary-heading">No more phantom bookings</h2>
         </div>
-        <div class="summary-body">
-          {isToday ? (
-            <p class="stat"><strong>{freeNow}</strong> of {rooms.length} rooms free</p>
-          ) : (
-            <p class="stat"><strong>{bookingsForDate.length}</strong> {bookingsForDate.length === 1 ? "booking" : "bookings"}</p>
-          )}
-          <div class="meter" aria-hidden="true"><span style={`width: ${meterFraction * 100}%`}></span></div>
-          {isToday && inUseNow.length > 0 && (
-            <ul class="live-list">
-              {inUseNow.map(({ room, booking }) => (
-                <li>
-                  <span class="live-dot" aria-hidden="true"></span>
-                  <span>{room.name}</span>
-                  <span class="muted">until {booking.endTime}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {isToday && inUseNow.length === 0 && <p class="muted">No room is in use at {nowTime}.</p>}
-          <p class="muted small">Updates live when anyone books or cancels.</p>
-        </div>
+        <ol class="howto">
+          <li>
+            <i class="dot dot-awaiting" aria-hidden="true"></i>
+            <span>When a booking starts, the room's door sign asks whoever booked it to <strong>check in</strong>.</span>
+          </li>
+          <li>
+            <i class="dot dot-busy" aria-hidden="true"></i>
+            <span>Checked in, the room reads <strong>in use</strong> on the board and at the door.</span>
+          </li>
+          <li>
+            <i class="dot dot-free" aria-hidden="true"></i>
+            <span>
+              Nobody by {CHECK_IN_GRACE_MIN} minutes in? It's a <strong>no-show</strong>: the room goes back to free and anyone
+              at the door can take it.
+            </span>
+          </li>
+        </ol>
+        <p class="muted small howto-foot">Everything here updates live when anyone books, checks in or leaves.</p>
       </aside>
     </div>
   </div>
   </main>
 
-  <script is:inline define:vars={{ date, nextBoundaryTarget }}>
-    // The board's live half: any tab looking at this same date reloads the
-    // moment a booking is made or cancelled anywhere, so two people looking
-    // at the same day never work from stale information. The form itself
-    // needs none of this — its own POST + redirect already re-renders from
-    // SQLite.
-    const source = new EventSource("/api/events");
-    source.addEventListener("booking", (event) => {
-      const payload = JSON.parse(event.data);
-      if (payload.date === date) location.reload();
-    });
-
-    // The SSE stream carries no state of its own, just a "something
-    // changed" signal — so a connection that drops (a network blip, a
-    // server restart on deploy) and reconnects has no way to know what it
-    // missed while it was down. "open" fires on every reconnect as well as
-    // the first connect; reload on every one after the first, since by
-    // then the only safe assumption is that something might have changed.
-    let hasOpenedBefore = false;
-    source.addEventListener("open", () => {
-      if (hasOpenedBefore) location.reload();
-      hasOpenedBefore = true;
-    });
-
-    // The "happening now" highlight and the "Today" label are computed once,
-    // at render time; reload at the next booking boundary (or midnight) so
-    // they never go stale. `nextBoundaryTarget` is a real UTC instant,
-    // computed DST-safely server-side — see canberraWallTimeToEpochMs in
-    // src/lib/clock.ts.
-    if (nextBoundaryTarget !== null) {
-      setTimeout(() => location.reload(), Math.max(0, nextBoundaryTarget - Date.now()) + 5_000);
-    }
-  </script>
+  <LiveReload date={date} nextBoundaryTarget={nextBoundaryTarget} />
+  <Ticker />
 
   <script is:inline>
     // The calendar half: hover an empty stretch of a room's row to preview a

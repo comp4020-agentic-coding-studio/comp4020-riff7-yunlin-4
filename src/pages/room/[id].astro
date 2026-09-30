@@ -1,0 +1,215 @@
+---
+import LiveReload from "../../components/LiveReload.astro";
+import Ticker from "../../components/Ticker.astro";
+import { canberraParts, canberraWallTimeToEpochMs, nextReloadTargetEpochMs } from "../../lib/clock";
+import { listBookingsForDate, listRooms } from "../../lib/db";
+import {
+  addMinutes,
+  graceEnds,
+  reloadBoundaries,
+  remainingFraction,
+  roomStatus,
+  slotState,
+  splitRoomName,
+  toMin,
+} from "../../lib/status";
+import "../../styles.css";
+
+// The screen that would hang outside the room: one glance from down the
+// corridor answers "can I go in?", and the person standing there can check in,
+// leave early, or take the room on the spot.
+const id = Number(Astro.params.id);
+const rooms = listRooms();
+const room = rooms.find((r) => r.id === id);
+if (!room) return Astro.redirect("/");
+
+const { date: today, time: now } = canberraParts(new Date());
+const bookings = listBookingsForDate(today).filter((b) => b.roomId === id);
+const status = roomStatus(bookings, now);
+const [library, label] = splitRoomName(room.name);
+const untilEpoch = status.until ? canberraWallTimeToEpochMs(today, status.until) : null;
+const frac = remainingFraction(status, now);
+const nextBoundaryTarget = nextReloadTargetEpochMs(today, now, reloadBoundaries(bookings));
+
+const error = Astro.url.searchParams.get("error");
+const errorMessages: Record<string, string> = {
+  conflict: "Someone got there first — that time isn't free any more.",
+  name: "Put your name in so the room knows who's got it.",
+  checkin: "That booking can't be checked in to any more.",
+  invalid: "That time doesn't work — try a shorter one.",
+};
+
+const stateWord = { free: "Free", busy: "In use", awaiting: "Check in" }[status.kind];
+
+const fmtLeft = (min: number) => (min < 60 ? `${min}:00` : `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`);
+const remainingMin = status.until ? toMin(status.until) - toMin(now) : null;
+const ringCaption =
+  status.kind === "busy"
+    ? "left in this booking"
+    : status.kind === "awaiting"
+      ? "to check in"
+      : status.next
+        ? `free until ${status.next.startTime}`
+        : "";
+
+// Walk-up bookings start now and stop short of the next booking.
+const minutesFree = (status.next ? toMin(status.next.startTime) : 23 * 60 + 59) - toMin(now);
+const durations = [30, 60, 90, 120].filter((d) => d <= minutesFree).map((d) => ({ label: d < 60 ? `${d} min` : `${d / 60} h`, end: addMinutes(now, d) }));
+if (durations.length === 0 && minutesFree >= 5 && status.next) {
+  durations.push({ label: `Until ${status.next.startTime}`, end: status.next.startTime });
+}
+
+// Today's strip for this one room: 08:00–20:00, stretched to fit.
+let startHour = 8;
+let endHour = 20;
+for (const b of bookings) {
+  startHour = Math.min(startHour, Math.floor(toMin(b.startTime) / 60));
+  endHour = Math.max(endHour, Math.ceil(toMin(b.endTime) / 60));
+}
+const axisStart = startHour * 60;
+const axisSpan = (endHour - startHour) * 60;
+const pct = (hhmm: string) => ((toMin(hhmm) - axisStart) / axisSpan) * 100;
+const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i).filter((h) => h % 2 === 0);
+const nowPct = toMin(now) >= axisStart && toMin(now) <= axisStart + axisSpan ? pct(now) : null;
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={`Live door sign for ${room.name}: whether it's free right now, and a way to check in or take it.`} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800;900&display=swap" />
+    <title>{label} · {stateWord} — Door sign</title>
+  </head>
+  <body class={`sign sign-${status.kind}`}>
+    <header class="sign-bar">
+      <nav aria-label="rooms" class="sign-nav">
+        <a class="sign-back" href="/">&larr; Room board</a>
+        <span class="sign-rooms">
+          {rooms.map((r) => (
+            <a href={`/room/${r.id}/`} aria-current={r.id === id ? "page" : undefined}>{splitRoomName(r.name)[1]}</a>
+          ))}
+        </span>
+      </nav>
+      <span class="sign-clock" data-clock>{now}</span>
+    </header>
+
+    <main class="sign-main">
+      <section class="sign-status">
+        <p class="sign-eyebrow">{library} Library</p>
+        <h1 class="sign-room">{label}</h1>
+        <p class="sign-word">{stateWord}</p>
+
+        {status.kind === "busy" && status.booking && (
+          <p class="sign-detail">
+            <strong>{status.booking.bookedBy}</strong> is in, until {status.booking.endTime}.
+            {status.next && <span> Next: {status.next.bookedBy} at {status.next.startTime}.</span>}
+          </p>
+        )}
+        {status.kind === "awaiting" && status.booking && (
+          <p class="sign-detail">
+            Booked by <strong>{status.booking.bookedBy}</strong> from {status.booking.startTime}, but nobody's checked in. The
+            room goes back up for grabs at {graceEnds(status.booking)}.
+          </p>
+        )}
+        {status.kind === "free" && (
+          <p class="sign-detail">
+            {status.released ? (
+              <span>
+                <strong>{status.released.bookedBy}</strong> didn't check in, so their {status.released.startTime}–{status.released.endTime} booking
+                was released.
+              </span>
+            ) : status.next ? (
+              <span>Nobody's booked it until {status.next.startTime}.</span>
+            ) : (
+              <span>Nothing else booked here today.</span>
+            )}
+          </p>
+        )}
+
+        {error && (
+          <p class="sign-error" role="alert">{errorMessages[error] ?? "Something went wrong — try again."}</p>
+        )}
+
+        {status.kind === "awaiting" && status.booking && (
+          <form method="post" action={`/api/bookings/${status.booking.id}/checkin`} class="sign-actions">
+            <button class="sign-btn">I'm here — check in</button>
+          </form>
+        )}
+
+        {status.kind === "busy" && status.booking && (
+          <form method="post" action={`/api/bookings/${status.booking.id}/end`} class="sign-actions">
+            <button class="sign-btn sign-btn-ghost">Leaving early? Free the room</button>
+          </form>
+        )}
+
+        {status.kind === "free" && durations.length > 0 && (
+          <form method="post" action="/api/bookings" class="sign-grab">
+            <input type="hidden" name="date" value={today} />
+            <input type="hidden" name="roomId" value={room.id} />
+            <input type="hidden" name="startTime" value={now} />
+            <input type="hidden" name="checkIn" value="1" />
+            <input type="hidden" name="return" value={`/room/${room.id}/`} />
+            <label for="grab-name">Take it now</label>
+            <div class="sign-grab-row">
+              <input id="grab-name" name="bookedBy" required maxlength="80" autocomplete="name" placeholder="Your name" />
+              {durations.map((d) => (
+                <button class="sign-pill" name="endTime" value={d.end}>{d.label}</button>
+              ))}
+            </div>
+          </form>
+        )}
+      </section>
+
+      <div
+        class="sign-ring"
+        data-until={untilEpoch ?? undefined}
+        data-seg-ms={status.segMin * 60_000}
+        style={`--frac: ${frac}`}
+      >
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-track" cx="60" cy="60" r="52" />
+          <circle class="ring-fill" cx="60" cy="60" r="52" pathLength="1" />
+        </svg>
+        <div class="ring-center">
+          {remainingMin !== null ? (
+            <>
+              <span class={`ring-num${remainingMin >= 60 ? " ring-num-long" : ""}`} data-left>{fmtLeft(remainingMin)}</span>
+              <span class="ring-cap">{ringCaption}</span>
+            </>
+          ) : (
+            <>
+              <span class="ring-num ring-num-word">All day</span>
+              <span class="ring-cap">free for the rest of today</span>
+            </>
+          )}
+        </div>
+      </div>
+    </main>
+
+    <footer class="sign-day">
+      <h2 class="sign-day-title">Today in {label}</h2>
+      <div class="day-track">
+        {hours.map((h) => (
+          <span class="day-hour" style={`left: ${((h * 60 - axisStart) / axisSpan) * 100}%`}>{String(h).padStart(2, "0")}</span>
+        ))}
+        {bookings.map((b) => (
+          <div
+            class={`day-block is-${slotState(b, "today", now)}`}
+            style={`left: ${pct(b.startTime)}%; width: ${pct(b.endTime) - pct(b.startTime)}%`}
+          >
+            <span>{b.startTime} {b.bookedBy}</span>
+          </div>
+        ))}
+        {nowPct !== null && <div class="day-now" style={`left: ${nowPct}%`} aria-hidden="true"></div>}
+      </div>
+    </footer>
+
+    <LiveReload date={today} nextBoundaryTarget={nextBoundaryTarget} />
+    <Ticker />
+  </body>
+</html>
